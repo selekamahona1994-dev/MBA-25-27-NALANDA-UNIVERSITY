@@ -84,12 +84,13 @@ def display_pdf(file_path):
     try:
         with open(file_path, "rb") as f:
             base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-        # PDF Viewer + Download button fallback for Chrome
-        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+        # Attempt to bypass chrome blocking with a robust iframe string
+        pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf">'
         st.markdown(pdf_display, unsafe_allow_html=True)
+        # Fail-safe download button
         with open(file_path, "rb") as file:
-            st.download_button(label="📥 Download CV for viewing", data=file, file_name=os.path.basename(file_path),
-                               mime="application/pdf")
+            st.download_button(label="📥 Download CV to View (If preview is blocked)", data=file,
+                               file_name=os.path.basename(file_path), mime="application/pdf")
     except Exception as e:
         st.error(f"Error displaying PDF: {e}")
 
@@ -120,13 +121,30 @@ def perform_detailed_audit(u_file):
 # --- UI SETUP ---
 st.set_page_config(page_title="SMS Nalanda University CV Portal", layout="wide")
 
-# CSS for hiding Streamlit elements
+# CSS for hiding Streamlit elements and styling Footer
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     .stAppDeployButton {display: none;}
-    .footer-col {font-size: 14px; line-height: 1.6;}
-    .footer-title {font-weight: bold; color: #1f77b4; margin-bottom: 10px;}
+
+    /* Footer Styling */
+    .footer-container {
+        background-color: #FF0000; 
+        padding: 30px; 
+        color: white; 
+        border-radius: 10px 10px 0 0;
+    }
+    .footer-col {font-size: 14px; line-height: 1.6; color: white;}
+    .footer-title {font-weight: bold; color: #FFD700; margin-bottom: 10px; font-size: 16px;}
+
+    /* Copyright Styling (Less Red / Light Red) */
+    .copyright-section {
+        background-color: #FF6666; 
+        padding: 15px; 
+        text-align: center; 
+        color: white; 
+        font-weight: bold;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -147,7 +165,6 @@ with tab1:
     if 'id_verified' not in st.session_state: st.session_state.id_verified = False
     if 'current_id' not in st.session_state: st.session_state.current_id = ""
 
-    # Return to first page button
     if st.session_state.id_verified:
         if st.button("⬅️ Return to ID Verification Page"):
             st.session_state.id_verified = False
@@ -164,7 +181,6 @@ with tab1:
             else:
                 st.error("Invalid Student ID. Please check and try again.")
     else:
-        # ID is verified, show Information and Upload/Actions
         sid = st.session_state.current_id
         s_info = STUDENT_DATA[sid]
         df = load_data()
@@ -172,7 +188,6 @@ with tab1:
 
         st.success(f"Hello, {s_info['name']}! Your identity is verified.")
 
-        # Display Student Info
         with st.expander("📝 Your Information Details", expanded=True):
             st.write(f"**Full Name:** {s_info['name']}")
             st.write(f"**Phone Number:** {s_info['phone']}")
@@ -187,11 +202,9 @@ with tab1:
             u_file = st.file_uploader("Select PDF CV", type=['pdf'])
             if st.button("Submit CV"):
                 if u_file:
-                    # Process Upload
                     path = os.path.join(SAVE_FOLDER, f"{sid}.pdf")
                     with open(path, "wb") as f:
                         f.write(u_file.getbuffer())
-
                     score, details = perform_detailed_audit(u_file)
                     new_row = pd.DataFrame([{"Name": s_info['name'], "ID": sid, "Score": score,
                                              "Audit_Details": details,
@@ -202,16 +215,12 @@ with tab1:
                 else:
                     st.error("Please select a file.")
         else:
-            # Action Menu if already submitted
             st.subheader("📂 Manage Your Submission")
-            st.warning("You have already submitted a CV. Choose an action below:")
-
             c1, c2, c3 = st.columns(3)
             with c1:
                 if st.button("👁️ View Submitted CV"):
                     display_pdf(os.path.join(SAVE_FOLDER, f"{sid}.pdf"))
             with c2:
-                # Edit functionality (re-upload)
                 new_edit_file = st.file_uploader("Re-upload CV to Edit", type=['pdf'], key="edit_up")
                 if st.button("Confirm Edit/Update"):
                     if new_edit_file:
@@ -230,7 +239,7 @@ with tab1:
                     save_data(df)
                     f_path = os.path.join(SAVE_FOLDER, f"{sid}.pdf")
                     if os.path.exists(f_path): os.remove(f_path)
-                    st.success("Submission deleted. You can now upload again.")
+                    st.success("Submission deleted.")
                     st.rerun()
 
 # --- ADMIN SECTION ---
@@ -246,13 +255,19 @@ with tab2:
                 else:
                     st.error("Wrong password")
     else:
-        st.subheader("Admin Management Console")
+        # LOGOUT BUTTON ADDED HERE
+        col_title, col_logout = st.columns([5, 1])
+        with col_title:
+            st.subheader("Admin Management Console")
+        with col_logout:
+            if st.button("🔓 Logout"):
+                st.session_state.admin_auth = False
+                st.rerun()
+
         df_adm = load_data()
         if not df_adm.empty:
-            # Add Action Link placeholder for the dataframe
             st.write("### Submitted Student Records")
             st.dataframe(df_adm, use_container_width=True)
-
             st.divider()
             st.write("### 🛠️ Global Actions")
             if st.button("🗑️ DELETE ALL DATA (Reset System)", type="primary"):
@@ -262,7 +277,6 @@ with tab2:
                 st.success("All documents and scores have been wiped.")
                 st.rerun()
 
-            # Individual CV Audit viewer
             sel_student = st.selectbox("Select Student to Audit/View", options=df_adm["Name"].tolist())
             if sel_student:
                 row = df_adm[df_adm["Name"] == sel_student].iloc[-1]
@@ -272,42 +286,34 @@ with tab2:
         else:
             st.info("No submissions found.")
 
-# --- FOOTER SIDE ---
-st.divider()
-f1, f2, f3 = st.columns(3)
-
-with f1:
-    st.markdown("""
-    <div class="footer-col">
-        <div class="footer-title">QUICK LINKS</div>
-        • About Our Logo<br>
-        • Copyright and Privacy Policy<br>
-        • Academic Calendar<br>
-        • Events<br>
-        • Contact Us
+# --- FOOTER ---
+st.markdown("""
+<div class="footer-container">
+    <div style="display: flex; justify-content: space-between;">
+        <div class="footer-col">
+            <div class="footer-title">QUICK LINKS</div>
+            • About Our Logo<br>
+            • Copyright and Privacy Policy<br>
+            • Academic Calendar<br>
+            • Events<br>
+            • Contact Us
+        </div>
+        <div class="footer-col">
+            <div class="footer-title">ADMISSION HELPLINE</div>
+            <i>(Monday to Friday, 9:30 am to 6:30 pm IST)</i><br><br>
+            <b>For Students:</b><br>
+            admission@nalandauniv.edu.in
+        </div>
+        <div class="footer-col">
+            <div class="footer-title">CAMPUS ADDRESS</div>
+            Nalanda University<br>
+            Rajgir, Nalanda District<br>
+            Bihar 803 116<br>
+            Email: nalanda@nalandauniv.edu.in
+        </div>
     </div>
-    """, unsafe_allow_html=True)
-
-with f2:
-    st.markdown("""
-    <div class="footer-col">
-        <div class="footer-title">ADMISSION HELPLINE</div>
-        <i>(Monday to Friday, 9:30 am to 6:30 pm IST)</i><br><br>
-        <b>For Students:</b><br>
-        admission@nalandauniv.edu.in
-    </div>
-    """, unsafe_allow_html=True)
-
-with f3:
-    st.markdown("""
-    <div class="footer-col">
-        <div class="footer-title">CAMPUS ADDRESS</div>
-        Nalanda University<br>
-        Rajgir, Nalanda District<br>
-        Bihar 803 116<br>
-        Email: nalanda@nalandauniv.edu.in
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("<br><hr><p style='text-align: center;'>Copyright 2025-2026 © SMS NALANDA UNIVERSITY</p>",
-            unsafe_allow_html=True)
+</div>
+<div class="copyright-section">
+    Copyright 2025-2026 © SMS NALANDA UNIVERSITY
+</div>
+""", unsafe_allow_html=True)
