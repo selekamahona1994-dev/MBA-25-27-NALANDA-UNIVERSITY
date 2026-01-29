@@ -70,17 +70,40 @@ STUDENT_DATA = {
 }
 
 
-# --- DETECTION ENGINE ---
-def perform_detailed_audit(text):
+# --- HELPERS ---
+def load_data():
+    if os.path.exists(DB_FILE): return pd.read_csv(DB_FILE, dtype={'ID': str})
+    return pd.DataFrame(columns=["Name", "ID", "Score", "Audit_Details", "Timestamp"])
+
+
+def save_data(df):
+    df.to_csv(DB_FILE, index=False)
+
+
+def display_pdf(file_path):
+    try:
+        with open(file_path, "rb") as f:
+            base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+        # PDF Viewer + Download button fallback for Chrome
+        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
+        st.markdown(pdf_display, unsafe_allow_html=True)
+        with open(file_path, "rb") as file:
+            st.download_button(label="📥 Download CV for viewing", data=file, file_name=os.path.basename(file_path),
+                               mime="application/pdf")
+    except Exception as e:
+        st.error(f"Error displaying PDF: {e}")
+
+
+def perform_detailed_audit(u_file):
+    with pdfplumber.open(u_file) as pdf:
+        text = " ".join([p.extract_text() for p in pdf.pages if p.extract_text()])
     t = " ".join(text.lower().split())
     criteria = {
-        "Personal Profile": ["profile", "summary", "objective", "about me", "career"],
-        "Personal Details": ["nationality", "date of birth", "gender", "id number"],
-        "Contact Info": ["email", "phone", "address", "contact"],
-        "Language Proficiency": ["language", "english", "proficiency"],
+        "Personal Profile": ["profile", "summary", "objective", "about me"],
+        "Contact Info": ["email", "phone", "address", "mobile"],
         "Academic Qualification": ["academic", "education", "degree", "university"],
-        "Professional Experience": ["experience", "employment", "work history"],
-        "Technical Skills": ["computer", "software", "ict", "excel", "word"],
+        "Professional Experience": ["experience", "employment", "internship"],
+        "Technical Skills": ["computer", "literacy", "software", "excel", "it"],
         "Referees": ["referees", "references"]
     }
     audit_results = {}
@@ -94,185 +117,197 @@ def perform_detailed_audit(text):
     return score, detailed_report
 
 
-# --- HELPERS ---
-def load_data():
-    if os.path.exists(DB_FILE): return pd.read_csv(DB_FILE, dtype={'ID': str})
-    return pd.DataFrame(columns=["Name", "ID", "Score", "Audit_Details", "Timestamp"])
-
-
-def save_submission(u_name, u_id, u_file):
-    path = os.path.join(SAVE_FOLDER, f"{u_id}.pdf")
-    with open(path, "wb") as f:
-        f.write(u_file.getbuffer())
-    with pdfplumber.open(u_file) as pdf:
-        raw_text = " ".join([p.extract_text() for p in pdf.pages if p.extract_text()])
-    score, details = perform_detailed_audit(raw_text)
-    df = load_data()
-    # Remove existing record if editing
-    df = df[df['ID'] != u_id]
-    new_row = pd.DataFrame([{"Name": u_name, "ID": u_id, "Score": score, "Audit_Details": details,
-                             "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")}])
-    pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, index=False)
-
-
-def delete_submission(u_id):
-    df = load_data()
-    df = df[df['ID'] != u_id]
-    df.to_csv(DB_FILE, index=False)
-    f_path = os.path.join(SAVE_FOLDER, f"{u_id}.pdf")
-    if os.path.exists(f_path): os.remove(f_path)
-
-
-def display_pdf(file_path):
-    with open(file_path, "rb") as f:
-        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="600" type="application/pdf"></iframe>'
-    st.markdown(pdf_display, unsafe_allow_html=True)
-
-
 # --- UI SETUP ---
-st.set_page_config(page_title="SMS Nalanda CV Portal", layout="wide")
+st.set_page_config(page_title="SMS Nalanda University CV Portal", layout="wide")
 
-hide_style = """<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}</style>"""
-st.markdown(hide_style, unsafe_allow_html=True)
+# CSS for hiding Streamlit elements
+st.markdown("""
+    <style>
+    #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
+    .stAppDeployButton {display: none;}
+    .footer-col {font-size: 14px; line-height: 1.6;}
+    .footer-title {font-weight: bold; color: #1f77b4; margin-bottom: 10px;}
+    </style>
+""", unsafe_allow_html=True)
 
 # --- HEADER ---
-col1, col2, col3 = st.columns([1, 1, 1])
-with col2:
+col_l, col_m, col_r = st.columns([1, 1, 1])
+with col_m:
     try:
         st.image("logo.png", use_container_width=True)
     except:
-        st.info("Centered Logo (logo.png)")
-st.markdown("<h2 style='text-align: center; color: #800000;'>School of Management Studies</h2>", unsafe_allow_html=True)
-
-# --- SESSION INITIALIZATION ---
-if 'verified_id' not in st.session_state: st.session_state.verified_id = None
+        st.info("Logo Placeholder (logo.png not found)")
+st.markdown("<h1 style='text-align: center;'>School of Management Studies</h1>", unsafe_allow_html=True)
+st.markdown("<h4 style='text-align: center; color: gray;'>NALANDA UNIVERSITY</h4>", unsafe_allow_html=True)
 
 tab1, tab2 = st.tabs(["📤 Student Submission", "🔒 Admin Dashboard"])
 
+# --- STUDENT SECTION ---
 with tab1:
-    if st.session_state.verified_id is None:
-        st.subheader("Verify Student Identity")
-        input_id = st.text_input("Enter Student ID to continue:")
+    if 'id_verified' not in st.session_state: st.session_state.id_verified = False
+    if 'current_id' not in st.session_state: st.session_state.current_id = ""
+
+    # Return to first page button
+    if st.session_state.id_verified:
+        if st.button("⬅️ Return to ID Verification Page"):
+            st.session_state.id_verified = False
+            st.rerun()
+
+    if not st.session_state.id_verified:
+        st.subheader("Step 1: Verify Identity")
+        v_id = st.text_input("Please enter your Student ID to proceed")
         if st.button("Verify ID"):
-            if input_id in STUDENT_DATA:
-                st.session_state.verified_id = input_id
+            if v_id in STUDENT_DATA:
+                st.session_state.id_verified = True
+                st.session_state.current_id = v_id
                 st.rerun()
             else:
-                st.error("Invalid Student ID. Please contact administration.")
+                st.error("Invalid Student ID. Please check and try again.")
     else:
-        # User is Verified
-        s_id = st.session_state.verified_id
-        info = STUDENT_DATA[s_id]
+        # ID is verified, show Information and Upload/Actions
+        sid = st.session_state.current_id
+        s_info = STUDENT_DATA[sid]
         df = load_data()
-        has_submitted = s_id in df['ID'].values
+        already_submitted = sid in df['ID'].values
 
-        # Information Display
-        st.success(f"ID Verified: {s_id}. If this information is correct, you can upload your CV.")
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.write(f"**Full Name:** {info['name']}")
-            st.write(f"**Phone:** {info['phone']}")
-        with col_b:
-            st.write(f"**School:** {info['school']}")
-            st.write(f"**Year:** {info['year']}")
+        st.success(f"Hello, {s_info['name']}! Your identity is verified.")
+
+        # Display Student Info
+        with st.expander("📝 Your Information Details", expanded=True):
+            st.write(f"**Full Name:** {s_info['name']}")
+            st.write(f"**Phone Number:** {s_info['phone']}")
+            st.write(f"**School:** {s_info['school']}")
+            st.write(f"**Year of Studies:** {s_info['year']}")
+            st.info("💡 If this information is correct, you can upload your CV below.")
 
         st.divider()
 
-        if not has_submitted:
-            # Upload Mode
-            st.subheader("Upload Your CV")
-            u_file = st.file_uploader("Select PDF File", type=['pdf'])
+        if not already_submitted:
+            st.subheader("📤 Upload your CV")
+            u_file = st.file_uploader("Select PDF CV", type=['pdf'])
             if st.button("Submit CV"):
                 if u_file:
-                    save_submission(info['name'], s_id, u_file)
-                    st.success("CV Submitted successfully!")
+                    # Process Upload
+                    path = os.path.join(SAVE_FOLDER, f"{sid}.pdf")
+                    with open(path, "wb") as f:
+                        f.write(u_file.getbuffer())
+
+                    score, details = perform_detailed_audit(u_file)
+                    new_row = pd.DataFrame([{"Name": s_info['name'], "ID": sid, "Score": score,
+                                             "Audit_Details": details,
+                                             "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")}])
+                    save_data(pd.concat([df, new_row], ignore_index=True))
+                    st.success("✅ CV Submitted Successfully!")
                     st.rerun()
                 else:
                     st.error("Please select a file.")
         else:
-            # Management Mode
-            st.info("You have already submitted a CV. Choose an action below:")
-            act_col1, act_col2, act_col3 = st.columns(3)
+            # Action Menu if already submitted
+            st.subheader("📂 Manage Your Submission")
+            st.warning("You have already submitted a CV. Choose an action below:")
 
-            with act_col1:
-                if st.button("👁️ View My CV"):
-                    st.session_state.view_cv = True
-            with act_col2:
-                if st.button("✏️ Edit / Re-upload"):
-                    st.session_state.edit_mode = True
-            with act_col3:
-                if st.button("🗑️ Delete Submission", type="primary"):
-                    delete_submission(s_id)
-                    st.warning("Submission deleted.")
-                    st.rerun()
-
-            if st.session_state.get('edit_mode'):
-                new_file = st.file_uploader("Upload New Version (PDF)", type=['pdf'])
-                if st.button("Update CV"):
-                    if new_file:
-                        save_submission(info['name'], s_id, new_file)
-                        st.session_state.edit_mode = False
-                        st.success("CV Updated!")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                if st.button("👁️ View Submitted CV"):
+                    display_pdf(os.path.join(SAVE_FOLDER, f"{sid}.pdf"))
+            with c2:
+                # Edit functionality (re-upload)
+                new_edit_file = st.file_uploader("Re-upload CV to Edit", type=['pdf'], key="edit_up")
+                if st.button("Confirm Edit/Update"):
+                    if new_edit_file:
+                        path = os.path.join(SAVE_FOLDER, f"{sid}.pdf")
+                        with open(path, "wb") as f: f.write(new_edit_file.getbuffer())
+                        score, details = perform_detailed_audit(new_edit_file)
+                        df.loc[df['ID'] == sid, ['Score', 'Audit_Details', 'Timestamp']] = [score, details,
+                                                                                            datetime.now().strftime(
+                                                                                                "%Y-%m-%d %H:%M")]
+                        save_data(df)
+                        st.success("CV Updated Successfully!")
                         st.rerun()
-
-            if st.session_state.get('view_cv'):
-                f_path = os.path.join(SAVE_FOLDER, f"{s_id}.pdf")
-                display_pdf(f_path)
-                if st.button("Close Preview"):
-                    st.session_state.view_cv = False
+            with c3:
+                if st.button("🗑️ Delete My CV"):
+                    df = df[df['ID'] != sid]
+                    save_data(df)
+                    f_path = os.path.join(SAVE_FOLDER, f"{sid}.pdf")
+                    if os.path.exists(f_path): os.remove(f_path)
+                    st.success("Submission deleted. You can now upload again.")
                     st.rerun()
 
-        if st.button("🔙 Return to First Page"):
-            st.session_state.verified_id = None
-            st.rerun()
-
+# --- ADMIN SECTION ---
 with tab2:
-    if "authenticated" not in st.session_state: st.session_state.authenticated = False
-    if not st.session_state.authenticated:
+    if "admin_auth" not in st.session_state: st.session_state.admin_auth = False
+    if not st.session_state.admin_auth:
         with st.form("admin_login"):
             pw = st.text_input("Password", type="password")
             if st.form_submit_button("Login"):
                 if pw == ADMIN_PASSWORD:
-                    st.session_state.authenticated = True
+                    st.session_state.admin_auth = True
                     st.rerun()
                 else:
-                    st.error("Wrong password.")
+                    st.error("Wrong password")
     else:
-        st.subheader("Admin Dashboard")
-        admin_df = load_data()
-        st.dataframe(admin_df, use_container_width=True)
-        if st.button("Logout Admin"):
-            st.session_state.authenticated = False
-            st.rerun()
+        st.subheader("Admin Management Console")
+        df_adm = load_data()
+        if not df_adm.empty:
+            # Add Action Link placeholder for the dataframe
+            st.write("### Submitted Student Records")
+            st.dataframe(df_adm, use_container_width=True)
 
-# --- FOOTER ---
-st.markdown("---")
+            st.divider()
+            st.write("### 🛠️ Global Actions")
+            if st.button("🗑️ DELETE ALL DATA (Reset System)", type="primary"):
+                if os.path.exists(DB_FILE): os.remove(DB_FILE)
+                shutil.rmtree(SAVE_FOLDER)
+                os.makedirs(SAVE_FOLDER)
+                st.success("All documents and scores have been wiped.")
+                st.rerun()
+
+            # Individual CV Audit viewer
+            sel_student = st.selectbox("Select Student to Audit/View", options=df_adm["Name"].tolist())
+            if sel_student:
+                row = df_adm[df_adm["Name"] == sel_student].iloc[-1]
+                st.write(f"**Audit Score:** {row['Score']}%")
+                st.info(f"**Audit Report:** {row['Audit_Details']}")
+                display_pdf(os.path.join(SAVE_FOLDER, f"{row['ID']}.pdf"))
+        else:
+            st.info("No submissions found.")
+
+# --- FOOTER SIDE ---
+st.divider()
 f1, f2, f3 = st.columns(3)
+
 with f1:
     st.markdown("""
-    **QUICK LINKS**
-    * [About Our Logo](#)
-    * [Copyright & Privacy Policy](#)
-    * [Academic Calendar](#)
-    * [Events](#)
-    * [Contact Us](#)
-    """)
+    <div class="footer-col">
+        <div class="footer-title">QUICK LINKS</div>
+        • About Our Logo<br>
+        • Copyright and Privacy Policy<br>
+        • Academic Calendar<br>
+        • Events<br>
+        • Contact Us
+    </div>
+    """, unsafe_allow_html=True)
+
 with f2:
     st.markdown("""
-    **Admission Helpline**
-    (Mon to Fri, 9:30 am to 6:30 pm IST)
+    <div class="footer-col">
+        <div class="footer-title">ADMISSION HELPLINE</div>
+        <i>(Monday to Friday, 9:30 am to 6:30 pm IST)</i><br><br>
+        <b>For Students:</b><br>
+        admission@nalandauniv.edu.in
+    </div>
+    """, unsafe_allow_html=True)
 
-    *For Students:*
-    admission@nalandauniv.edu.in
-    """)
 with f3:
     st.markdown("""
-    **Campus Address**
-    Nalanda University
-    Rajgir, Nalanda District
-    Bihar 803 116
-    nalanda@nalandauniv.edu.in
-    """)
-st.markdown("<p style='text-align: center; font-size: 12px;'>Copyright 2025-2026 © SMS NALANDA UNIVERSITY</p>",
+    <div class="footer-col">
+        <div class="footer-title">CAMPUS ADDRESS</div>
+        Nalanda University<br>
+        Rajgir, Nalanda District<br>
+        Bihar 803 116<br>
+        Email: nalanda@nalandauniv.edu.in
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<br><hr><p style='text-align: center;'>Copyright 2025-2026 © SMS NALANDA UNIVERSITY</p>",
             unsafe_allow_html=True)
