@@ -17,7 +17,6 @@ if not os.path.exists(SAVE_FOLDER):
     os.makedirs(SAVE_FOLDER)
 
 # --- STUDENT DATABASE ---
-# This dictionary stores the pre-filled information based on Student ID
 STUDENT_DATA = {
     "040425001": {"name": "Stuti Mishra", "phone": "+916201494101", "school": "Management Studies",
                   "year": "2025-2027"},
@@ -75,14 +74,14 @@ STUDENT_DATA = {
 def perform_detailed_audit(text):
     t = " ".join(text.lower().split())
     criteria = {
-        "Personal Profile": ["profile", "summary", "objective", "about me", "career", "biography", "statement"],
-        "Personal Details": ["nationality", "date of birth", "gender", "marital status", "id number", "dob", "bio"],
-        "Contact Info": ["email", "phone", "address", "contact", "cell", "telephone"],
-        "Language Proficiency": ["language", "english", "swahili", "proficiency", "speak"],
-        "Academic Qualification": ["academic", "education", "degree", "university", "school", "institution"],
-        "Professional Experience": ["experience", "employment", "work history", "internship"],
-        "Technical & Computer Literacy": ["computer", "literacy", "software", "ict", "digital", "excel", "word"],
-        "Referees": ["referees", "references", "recommendation", "referee"]
+        "Personal Profile": ["profile", "summary", "objective", "about me", "career"],
+        "Personal Details": ["nationality", "date of birth", "gender", "id number"],
+        "Contact Info": ["email", "phone", "address", "contact"],
+        "Language Proficiency": ["language", "english", "proficiency"],
+        "Academic Qualification": ["academic", "education", "degree", "university"],
+        "Professional Experience": ["experience", "employment", "work history"],
+        "Technical Skills": ["computer", "software", "ict", "excel", "word"],
+        "Referees": ["referees", "references"]
     }
     audit_results = {}
     found_count = 0
@@ -96,6 +95,34 @@ def perform_detailed_audit(text):
 
 
 # --- HELPERS ---
+def load_data():
+    if os.path.exists(DB_FILE): return pd.read_csv(DB_FILE, dtype={'ID': str})
+    return pd.DataFrame(columns=["Name", "ID", "Score", "Audit_Details", "Timestamp"])
+
+
+def save_submission(u_name, u_id, u_file):
+    path = os.path.join(SAVE_FOLDER, f"{u_id}.pdf")
+    with open(path, "wb") as f:
+        f.write(u_file.getbuffer())
+    with pdfplumber.open(u_file) as pdf:
+        raw_text = " ".join([p.extract_text() for p in pdf.pages if p.extract_text()])
+    score, details = perform_detailed_audit(raw_text)
+    df = load_data()
+    # Remove existing record if editing
+    df = df[df['ID'] != u_id]
+    new_row = pd.DataFrame([{"Name": u_name, "ID": u_id, "Score": score, "Audit_Details": details,
+                             "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")}])
+    pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, index=False)
+
+
+def delete_submission(u_id):
+    df = load_data()
+    df = df[df['ID'] != u_id]
+    df.to_csv(DB_FILE, index=False)
+    f_path = os.path.join(SAVE_FOLDER, f"{u_id}.pdf")
+    if os.path.exists(f_path): os.remove(f_path)
+
+
 def display_pdf(file_path):
     with open(file_path, "rb") as f:
         base64_pdf = base64.b64encode(f.read()).decode('utf-8')
@@ -103,114 +130,149 @@ def display_pdf(file_path):
     st.markdown(pdf_display, unsafe_allow_html=True)
 
 
-def create_zip_of_cvs(folder_path):
-    buf = BytesIO()
-    with zipfile.ZipFile(buf, "w") as z:
-        for root, dirs, files in os.walk(folder_path):
-            for file in files:
-                if file.endswith(".pdf"):
-                    z.write(os.path.join(root, file), file)
-    return buf.getvalue()
-
-
-def load_data():
-    if os.path.exists(DB_FILE): return pd.read_csv(DB_FILE)
-    return pd.DataFrame(columns=["Name", "ID", "Score", "Audit_Details", "Timestamp"])
-
-
 # --- UI SETUP ---
-st.set_page_config(page_title="CV Management System", layout="wide")
+st.set_page_config(page_title="SMS Nalanda CV Portal", layout="wide")
 
-# CSS to clean UI
-hide_streamlit_style = """
-            <style>
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
-            header {visibility: hidden;}
-            .stAppDeployButton {display: none;}
-            </style>
-            """
-st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+hide_style = """<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}</style>"""
+st.markdown(hide_style, unsafe_allow_html=True)
 
-# --- HEADER WITH LOGO ---
+# --- HEADER ---
 col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
-    # Ensure logo.png is in the same directory as the script
     try:
         st.image("logo.png", use_container_width=True)
     except:
-        st.info("Logo Placeholder (logo.png not found)")
-st.markdown("<h2 style='text-align: center;'>School of Management Studies</h2>", unsafe_allow_html=True)
+        st.info("Centered Logo (logo.png)")
+st.markdown("<h2 style='text-align: center; color: #800000;'>School of Management Studies</h2>", unsafe_allow_html=True)
+
+# --- SESSION INITIALIZATION ---
+if 'verified_id' not in st.session_state: st.session_state.verified_id = None
 
 tab1, tab2 = st.tabs(["📤 Student Submission", "🔒 Admin Dashboard"])
 
 with tab1:
-    st.info("### 📝 Instructions\nEnter your Student ID to auto-fill your details, then upload your PDF CV.")
-
-    # Input for Student ID
-    input_id = st.text_input("Enter Student ID (e.g., 040425001)")
-
-    # Auto-fill Logic
-    student_info = STUDENT_DATA.get(input_id, {"name": "", "phone": "", "school": "", "year": ""})
-
-    with st.form("student_form", clear_on_submit=True):
-        st.subheader("Your Information")
-        # These fields auto-populate based on the ID entered above
-        u_name = st.text_input("Full Name:", value=student_info["name"])
-        u_phone = st.text_input("Phone Number:", value=student_info["phone"])
-        u_school = st.text_input("School:", value=student_info["school"])
-        u_year = st.text_input("Year of Studies:", value=student_info["year"])
-
-        u_file = st.file_uploader("Upload CV (PDF)", type=['pdf'])
-
-        submit = st.form_submit_button("Submit CV")
-
-        if submit:
-            if u_name and input_id and u_file:
-                path = os.path.join(SAVE_FOLDER, f"{input_id}.pdf")
-                with open(path, "wb") as f:
-                    f.write(u_file.getbuffer())
-
-                with pdfplumber.open(u_file) as pdf:
-                    raw_text = " ".join([p.extract_text() for p in pdf.pages if p.extract_text()])
-
-                score, details = perform_detailed_audit(raw_text)
-                df = load_data()
-                new_row = pd.DataFrame([{"Name": u_name, "ID": input_id, "Score": score, "Audit_Details": details,
-                                         "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M")}])
-                pd.concat([df, new_row], ignore_index=True).to_csv(DB_FILE, index=False)
-                st.success(f"✅ CV for {u_name} received and audited!")
+    if st.session_state.verified_id is None:
+        st.subheader("Verify Student Identity")
+        input_id = st.text_input("Enter Student ID to continue:")
+        if st.button("Verify ID"):
+            if input_id in STUDENT_DATA:
+                st.session_state.verified_id = input_id
+                st.rerun()
             else:
-                st.error("⚠️ Please provide a valid ID and upload a PDF file.")
+                st.error("Invalid Student ID. Please contact administration.")
+    else:
+        # User is Verified
+        s_id = st.session_state.verified_id
+        info = STUDENT_DATA[s_id]
+        df = load_data()
+        has_submitted = s_id in df['ID'].values
 
-with tab2:
-    if "authenticated" not in st.session_state: st.session_state["authenticated"] = False
-    if not st.session_state["authenticated"]:
-        with st.form("login"):
-            pw = st.text_input("Admin Password", type="password")
-            if st.form_submit_button("Login"):
-                if pw == ADMIN_PASSWORD:
-                    st.session_state["authenticated"] = True
+        # Information Display
+        st.success(f"ID Verified: {s_id}. If this information is correct, you can upload your CV.")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.write(f"**Full Name:** {info['name']}")
+            st.write(f"**Phone:** {info['phone']}")
+        with col_b:
+            st.write(f"**School:** {info['school']}")
+            st.write(f"**Year:** {info['year']}")
+
+        st.divider()
+
+        if not has_submitted:
+            # Upload Mode
+            st.subheader("Upload Your CV")
+            u_file = st.file_uploader("Select PDF File", type=['pdf'])
+            if st.button("Submit CV"):
+                if u_file:
+                    save_submission(info['name'], s_id, u_file)
+                    st.success("CV Submitted successfully!")
                     st.rerun()
                 else:
-                    st.error("Access Denied")
-    else:
-        st.subheader("Admin Audit Dashboard")
-        df_admin = load_data()
-        if not df_admin.empty:
-            st.dataframe(df_admin, use_container_width=True)
-
-            # Individual Viewer
-            sel = st.selectbox("View Student CV", options=df_admin["Name"].tolist())
-            rec = df_admin[df_admin["Name"] == sel].iloc[-1]
-
-            c1, c2 = st.columns([1, 2])
-            with c1:
-                st.metric("Audit Score", f"{rec['Score']}%")
-                st.write("**Audit Details:**")
-                st.write(rec['Audit_Details'].replace(" | ", "\n\n"))
-            with c2:
-                f_path = os.path.join(SAVE_FOLDER, f"{rec['ID']}.pdf")
-                if os.path.exists(f_path): display_pdf(f_path)
+                    st.error("Please select a file.")
         else:
-            st.info("No records yet.")
+            # Management Mode
+            st.info("You have already submitted a CV. Choose an action below:")
+            act_col1, act_col2, act_col3 = st.columns(3)
+
+            with act_col1:
+                if st.button("👁️ View My CV"):
+                    st.session_state.view_cv = True
+            with act_col2:
+                if st.button("✏️ Edit / Re-upload"):
+                    st.session_state.edit_mode = True
+            with act_col3:
+                if st.button("🗑️ Delete Submission", type="primary"):
+                    delete_submission(s_id)
+                    st.warning("Submission deleted.")
+                    st.rerun()
+
+            if st.session_state.get('edit_mode'):
+                new_file = st.file_uploader("Upload New Version (PDF)", type=['pdf'])
+                if st.button("Update CV"):
+                    if new_file:
+                        save_submission(info['name'], s_id, new_file)
+                        st.session_state.edit_mode = False
+                        st.success("CV Updated!")
+                        st.rerun()
+
+            if st.session_state.get('view_cv'):
+                f_path = os.path.join(SAVE_FOLDER, f"{s_id}.pdf")
+                display_pdf(f_path)
+                if st.button("Close Preview"):
+                    st.session_state.view_cv = False
+                    st.rerun()
+
+        if st.button("🔙 Return to First Page"):
+            st.session_state.verified_id = None
+            st.rerun()
+
+with tab2:
+    if "authenticated" not in st.session_state: st.session_state.authenticated = False
+    if not st.session_state.authenticated:
+        with st.form("admin_login"):
+            pw = st.text_input("Password", type="password")
+            if st.form_submit_button("Login"):
+                if pw == ADMIN_PASSWORD:
+                    st.session_state.authenticated = True
+                    st.rerun()
+                else:
+                    st.error("Wrong password.")
+    else:
+        st.subheader("Admin Dashboard")
+        admin_df = load_data()
+        st.dataframe(admin_df, use_container_width=True)
+        if st.button("Logout Admin"):
+            st.session_state.authenticated = False
+            st.rerun()
+
+# --- FOOTER ---
+st.markdown("---")
+f1, f2, f3 = st.columns(3)
+with f1:
+    st.markdown("""
+    **QUICK LINKS**
+    * [About Our Logo](#)
+    * [Copyright & Privacy Policy](#)
+    * [Academic Calendar](#)
+    * [Events](#)
+    * [Contact Us](#)
+    """)
+with f2:
+    st.markdown("""
+    **Admission Helpline**
+    (Mon to Fri, 9:30 am to 6:30 pm IST)
+
+    *For Students:*
+    admission@nalandauniv.edu.in
+    """)
+with f3:
+    st.markdown("""
+    **Campus Address**
+    Nalanda University
+    Rajgir, Nalanda District
+    Bihar 803 116
+    nalanda@nalandauniv.edu.in
+    """)
+st.markdown("<p style='text-align: center; font-size: 12px;'>Copyright 2025-2026 © SMS NALANDA UNIVERSITY</p>",
+            unsafe_allow_html=True)
