@@ -24,7 +24,7 @@ STUDENT_DATA = {
                   "year": "2025-2027"},
     "040425004": {"name": "Claireshelmith MwendeMacharia", "phone": "+918434931097", "school": "Management Studies",
                   "year": "2025-2027"},
-    "040425005": {"name": "Shreya", "phone": "+919528388257", "school": "Management Studies", "year": "2025-2027"},
+    "040425005": {"name": "Shreya Manav", "phone": "+919528388257", "school": "Management Studies", "year": "2025-2027"},
     "040425006": {"name": "Emmanuel Armah", "phone": "+233247802748", "school": "Management Studies",
                   "year": "2025-2027"},
     "040425007": {"name": "Raghubir PrasadTharu", "phone": "+919120052250", "school": "Management Studies",
@@ -119,7 +119,7 @@ def perform_detailed_audit(u_file):
 
 
 # --- UI SETUP ---
-st.set_page_config(page_title="SMS Nalanda University CV Portal", layout="wide")
+st.set_page_config(page_title="UNIVERSAL SCREENING PORTAL", layout="wide")
 
 # CSS for hiding Streamlit elements and styling Footer
 st.markdown("""
@@ -155,10 +155,10 @@ with col_m:
         st.image("logo.png", use_container_width=True)
     except:
         st.info("Logo Placeholder (logo.png not found)")
-st.markdown("<h1 style='text-align: center;'>School of Management Studies</h1>", unsafe_allow_html=True)
-st.markdown("<h4 style='text-align: center; color: gray;'>NALANDA UNIVERSITY</h4>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>TIME MANAGEMENT SYSTEM</h1>", unsafe_allow_html=True)
+st.markdown("<h4 style='text-align: center; color: gray;'>UNIVERSAL SCREENING PORTAL</h4>", unsafe_allow_html=True)
 
-tab1, tab2 = st.tabs(["📤 Student Submission", "🔒 Admin Dashboard"])
+tab1, tab2 = st.tabs(["📤 APPLICANT Submission", "🔒 Admin Dashboard"])
 
 # --- STUDENT SECTION ---
 with tab1:
@@ -172,14 +172,14 @@ with tab1:
 
     if not st.session_state.id_verified:
         st.subheader("Step 1: Verify Identity")
-        v_id = st.text_input("Please enter your Student ID to proceed")
+        v_id = st.text_input("Please enter your National ID Number to proceed (e.g : 040425000)")
         if st.button("Verify ID"):
             if v_id in STUDENT_DATA:
                 st.session_state.id_verified = True
                 st.session_state.current_id = v_id
                 st.rerun()
             else:
-                st.error("Invalid Student ID. Please check and try again.")
+                st.error("Invalid National ID Number. Please check and try again.")
     else:
         sid = st.session_state.current_id
         s_info = STUDENT_DATA[sid]
@@ -193,12 +193,12 @@ with tab1:
             st.write(f"**Phone Number:** {s_info['phone']}")
             st.write(f"**School:** {s_info['school']}")
             st.write(f"**Year of Studies:** {s_info['year']}")
-            st.info("💡 If this information is correct, you can upload your CV below.")
+            st.info("💡 If this information is correct, you can upload your CV below in PDF format.")
 
         st.divider()
 
         if not already_submitted:
-            st.subheader("📤 Upload your CV")
+            st.subheader("📤 Upload your CV and then COVER LETTER")
             u_file = st.file_uploader("Select PDF CV", type=['pdf'])
             if st.button("Submit CV"):
                 if u_file:
@@ -266,7 +266,7 @@ with tab2:
 
         df_adm = load_data()
         if not df_adm.empty:
-            st.write("### Submitted Student Records")
+            st.write("### Submitted portal Records")
             st.dataframe(df_adm, use_container_width=True)
             st.divider()
             st.write("### 🛠️ Global Actions")
@@ -294,26 +294,26 @@ st.markdown("""
             <div class="footer-title">QUICK LINKS</div>
             • About Our Logo<br>
             • Copyright and Privacy Policy<br>
-            • Academic Calendar<br>
+            • portal Calendar<br>
             • Events<br>
             • Contact Us
         </div>
         <div class="footer-col">
             <div class="footer-title">ADMISSION HELPLINE</div>
             <i>(Monday to Friday, 9:30 am to 6:30 pm IST)</i><br><br>
-            <b>For Students:</b><br>
-            admission@nalandauniv.edu.in
+            <b>For portals:</b><br>
+            admission@portal.edu.in
         </div>
         <div class="footer-col">
-            <div class="footer-title">CAMPUS ADDRESS</div>
-            Nalanda University<br>
+            <div class="footer-title">PORTAL ADDRESS</div>
+           portal<br>
             Rajgir, Nalanda District<br>
             Bihar 803 116<br>
-            Email: nalanda@nalandauniv.edu.in
+            Email:  selekamahonagmail.com
         </div>
     </div>
 </div>
 <div class="copyright-section">
-    Copyright 2025-2026 © SMS NALANDA UNIVERSITY
+    Copyright 2025-2026 © UNIVERSAL SCREENING PORTAL
 </div>
 """, unsafe_allow_html=True)
